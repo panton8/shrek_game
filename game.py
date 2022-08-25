@@ -1,5 +1,6 @@
 import pygame
 import os
+import random
 
 pygame.init()
 
@@ -64,10 +65,12 @@ class Character(pygame.sprite.Sprite):
         pygame.sprite.Sprite.__init__(self)
         self.alive = True
         self.char_type = char_type
+
         if char_type == 'Player':
             self.weapon_image = stone_img
         else:
             self.weapon_image = arrow_img
+
         self.speed = speed
         self.coins = 0
         self.ammo = ammo
@@ -84,7 +87,13 @@ class Character(pygame.sprite.Sprite):
         self.frame_index = 0
         self.action = 0
         self.update_time = pygame.time.get_ticks()
-        temp_list = []
+
+        # AI specific variables
+        self.move_counter = 0
+        self.vision = pygame.Rect(0, 0, 150, 20)
+        self.idling = False
+        self.idling_counter = 0
+
         # load all images for the characters
         animation_types = ['Idle', 'Run', 'Jump', 'Shoot', 'Death']
         for animation in animation_types:
@@ -145,13 +154,52 @@ class Character(pygame.sprite.Sprite):
         if self.shoot_cooldown == 0 and self.ammo > 0:
             self.shoot_cooldown = 50
             if self.char_type == 'Player':
-                stone_object = ShootingSubject(self.rect.centerx + (0.6 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
+                stone_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
                 stone_group.add(stone_object)
             else:
-                arrow_object = ShootingSubject(self.rect.centerx + (0.6 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
+                arrow_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
                 arrow_group.add(arrow_object)
             # reduce ammo
             self.ammo -= 1
+
+    def ai(self):
+        if self.alive and shrek.alive:
+            if self.idling is False and random.randint(1, 200) == 1:
+                self.update_action(0)  # 0: idle
+                self.idling = True
+                self.idling_counter = 50
+            # check if the AI in near the player
+            if self.vision.colliderect(shrek.rect):
+                # stop running and face the player
+                self.update_action(3)   # 3: shoot
+                # shoot
+                self.shoot()
+            else:
+                if self.idling is False:
+                    if self.direction == 1:
+                        ai_moving_right = True
+                    else:
+                        ai_moving_right = False
+                    ai_moving_left = not ai_moving_right
+                    self.move(ai_moving_left, ai_moving_right)
+                    self.update_action(1)  # 1: run
+                    self.move_counter += 1
+                    # update AI vision as the enemy moves
+                    self.vision.center = (self.rect.centerx + 75 * self.direction, self.rect.centery)
+
+                    if self.move_counter > TILE_SIZE:
+                        self.direction *= -1
+                        self.move_counter *= -1
+                else:
+                    self.idling_counter -= 1
+                    if self.idling_counter <= 0:
+                        self.idling = False
+        elif not self.alive:
+            self.update_action(4)   # 4: death
+        else:
+            self.update_action(0)  # 0: idle
+
+
 
     def update_animation(self):
         # update animation
@@ -268,11 +316,11 @@ arrow_group = pygame.sprite.Group()
 item_box_group = pygame.sprite.Group()
 
 
-shrek = Character('Player', 200, 200, 1.5, 4, 20)
+shrek = Character('Player', 200, 200, 1.15, 3.75, 20)
 health_bar = HealthBar(10, 10, shrek.health, shrek.health)
 
-enemy = Character('Enemy', 400, 200, 1.5, 4, 20)
-enemy2 = Character('Enemy', 300, 300, 1.5, 4, 20)
+enemy = Character('Enemy', 400, 200, 1.15, 1.5, 20)
+enemy2 = Character('Enemy', 300, 300, 1.15, 1.5, 20)
 enemy_group.add(enemy)
 enemy_group.add(enemy2)
 
@@ -300,6 +348,7 @@ while run:
     shrek.draw()
 
     for enemy in enemy_group:
+        enemy.ai()
         enemy.update()
         enemy.draw()
 
