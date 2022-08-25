@@ -1,6 +1,7 @@
 import pygame
 import os
 import random
+import csv
 
 pygame.init()
 
@@ -16,12 +17,23 @@ FPS = 60
 
 # define game variables
 GRAVITY = 0.75
-TILE_SIZE = 40
+ROWS = 16
+COLS = 150
+TILE_SIZE = SCREEN_HEIGHT // ROWS
+TILE_TYPES = 28
+level = 1
 
 # define player action variables
 moving_left = False
 moving_right = False
 shoot = False
+
+# store tiles in a list
+img_list = []
+for x in range(TILE_TYPES):
+    img = pygame.image.load(f'images/Tile/{x}.png')
+    img = pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
+    img_list.append(img)
 
 # load images
 stone_img = pygame.image.load('images/Icons/stone.png').convert_alpha()
@@ -31,12 +43,11 @@ arrow_img = pygame.image.load('images/Icons/arrow.png').convert_alpha()
 heal_box_img = pygame.image.load('images/Icons/health.png').convert_alpha()
 coin_box_img = pygame.image.load('images/Icons/coin.png').convert_alpha()
 ammo_box_img = pygame.image.load('images/Icons/ammo.png').convert_alpha()
-spikes_box_img = pygame.image.load('images/Icons/spikes.png')
+
 item_boxes = {
     'Health': heal_box_img,
     'Ammo': ammo_box_img,
     'Coin': coin_box_img,
-    'Spikes': spikes_box_img
 }
 
 # define colors
@@ -137,8 +148,6 @@ class Character(pygame.sprite.Sprite):
             self.in_air = True
         # apply gravity
         self.vel_y += GRAVITY
-        if self.vel_y > 10:
-            self.vel_y
         dy += self.vel_y
 
         # check collision with floor
@@ -199,8 +208,6 @@ class Character(pygame.sprite.Sprite):
         else:
             self.update_action(0)  # 0: idle
 
-
-
     def update_animation(self):
         # update animation
         ANIMATION_COOLDOWN = 115
@@ -236,6 +243,78 @@ class Character(pygame.sprite.Sprite):
         screen.blit(pygame.transform.flip(self.image, self.flip, False), self.rect)
 
 
+class World:
+    def __init__(self):
+        self.obstacle_list = []
+
+    def process_data(self, data):
+        # iterate through each value in level data file
+        for y, row in enumerate(data):
+            for x, tile in enumerate(row):
+                if tile >= 0:
+                    img = img_list[tile]
+                    img_rect = img.get_rect()
+                    img_rect.x = x * TILE_SIZE
+                    img_rect.y = y * TILE_SIZE
+                    tile_data = (img, img_rect)
+                    if tile >= 0 and tile <= 16:
+                        self.obstacle_list.append(tile_data)
+                    elif tile == 17:    # create ammo box
+                        item_box = ItemBox('Ammo', x * TILE_SIZE, y * TILE_SIZE)
+                        item_box_group.add(item_box)
+                    elif tile == 18:    # create coin
+                        item_box = ItemBox('Coin', x * TILE_SIZE, y * TILE_SIZE)
+                        item_box_group.add(item_box)
+                    elif tile == 19:    # create health_point
+                        item_box = ItemBox('Health', x * TILE_SIZE, y * TILE_SIZE)
+                        item_box_group.add(item_box)
+                    elif tile == 20:    # create a player
+                        shrek = Character('Player', x * TILE_SIZE, y * TILE_SIZE, 1.15, 3.75, 20)
+                        health_bar = HealthBar(10, 10, shrek.health, shrek.health)
+                    elif tile == 21:    # create enemy
+                        enemy = Character('Enemy', x * TILE_SIZE, y * TILE_SIZE, 1.15, 1.5, 20)
+                        enemy_group.add(enemy)
+                    elif tile == 22:
+                        spikes = Spikes(img, x * TILE_SIZE, y * TILE_SIZE)
+                        spikes_group.add(spikes)
+                    elif tile >= 23 and tile <= 26:
+                        decoration = Decoration(img, x * TILE_SIZE, y * TILE_SIZE)
+                        decoration_group.add(decoration)
+                    elif tile == 27:
+                        exit = Exit(img, x * TILE_SIZE, y * TILE_SIZE)
+                        exit_group.add(exit)
+
+        return shrek, health_bar
+
+    def draw(self):
+        for tile in self.obstacle_list:
+            screen.blit(tile[0], tile[1])
+
+
+class Decoration(pygame.sprite.Sprite):
+    def __init__(self, img, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = img
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+
+
+class Spikes(pygame.sprite.Sprite):
+    def __init__(self, img, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = img
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+
+
+class Exit(pygame.sprite.Sprite):
+    def __init__(self, img, x, y):
+        pygame.sprite.Sprite.__init__(self)
+        self.image = img
+        self.rect = self.image.get_rect()
+        self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+
+
 class ItemBox(pygame.sprite.Sprite):
     def __init__(self, item_type, x, y):
         pygame.sprite.Sprite.__init__(self)
@@ -256,11 +335,6 @@ class ItemBox(pygame.sprite.Sprite):
                 shrek.coins += 1
             elif self.item_type == 'Ammo':
                 shrek.ammo += 5
-            elif self.item_type == 'Spikes':
-                shrek.health = 0
-            # delete the item box
-            if self.item_type != 'Spikes':
-                self.kill()
 
 
 class HealthBar:
@@ -310,34 +384,43 @@ class ShootingSubject(pygame.sprite.Sprite):
 
 # create sprite groups
 enemy_group = pygame.sprite.Group()
-#shooting_group = pygame.sprite.Group()
 stone_group = pygame.sprite.Group()
 arrow_group = pygame.sprite.Group()
 item_box_group = pygame.sprite.Group()
+decoration_group = pygame.sprite.Group()
+spikes_group = pygame.sprite.Group()
+exit_group = pygame.sprite.Group()
 
+# create empty tile list
+world_data = []
+for row in range(ROWS):
+    r = [-1] * COLS
+    world_data.append(r)
 
-shrek = Character('Player', 200, 200, 1.15, 3.75, 20)
-health_bar = HealthBar(10, 10, shrek.health, shrek.health)
+# load in level data and create world
+with open(f'level{level - 1}_data.csv', newline='') as csvfile:
+    reader = csv.reader(csvfile, delimiter=',')
+    for x, row in enumerate(reader):
+        for y, tile in enumerate(row):
+            world_data[x][y] = int(tile)
 
-enemy = Character('Enemy', 400, 200, 1.15, 1.5, 20)
-enemy2 = Character('Enemy', 300, 300, 1.15, 1.5, 20)
-enemy_group.add(enemy)
-enemy_group.add(enemy2)
+world = World()
+shrek, health_bar = world.process_data(world_data)
 
-# temp - create item box
-item_box = ItemBox('Health', 100, 260)
-item_box_group.add(item_box)
-item_box1 = ItemBox('Spikes', 350, 260)
-item_box_group.add(item_box1)
 
 run = True
 while run:
-
     clock.tick(FPS)
 
+    # update background
     draw_bg()
+
+    # draw world map
+    world.draw()
+
     # show player health
     health_bar.draw(shrek.health)
+
     # show ammo
     screen.blit(stone_img, (5, 37.5))
     draw_text(f': {shrek.ammo}', font, WHITE, 25, 40)
@@ -355,9 +438,15 @@ while run:
     # update and draw groups
     stone_group.update()
     arrow_group.update()
-
     stone_group.draw(screen)
     arrow_group.draw(screen)
+
+    decoration_group.update()
+    exit_group.update()
+    spikes_group.update()
+    exit_group.draw(screen)
+    decoration_group.draw(screen)
+    spikes_group.draw(screen)
 
     item_box_group.update()
     item_box_group.draw(screen)
