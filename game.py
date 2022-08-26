@@ -17,10 +17,13 @@ FPS = 60
 
 # define game variables
 GRAVITY = 0.75
+SCROLL_THRESH = 200
 ROWS = 16
 COLS = 150
 TILE_SIZE = SCREEN_HEIGHT // ROWS
 TILE_TYPES = 28
+screen_scroll = 0
+bg_scroll = 0
 level = 1
 
 # define player action variables
@@ -34,6 +37,14 @@ for x in range(TILE_TYPES):
     img = pygame.image.load(f'images/Tile/{x}.png')
     img = pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
     img_list.append(img)
+
+# load images for background
+view_img = pygame.image.load('images/BackGround/View.png').convert_alpha()
+tree1_img = pygame.image.load('images/BackGround/Tree1.png').convert_alpha()
+tree2_img = pygame.image.load('images/BackGround/Tree2.png').convert_alpha()
+swamp_img = pygame.image.load('images/BackGround/Swamp.png').convert_alpha()
+grass_img = pygame.image.load('images/BackGround/Grass.png').convert_alpha()
+
 
 # load images
 stone_img = pygame.image.load('images/Icons/stone.png').convert_alpha()
@@ -68,7 +79,11 @@ def draw_text(text, font, text_col, x, y):
 
 def draw_bg():
     screen.fill(BG)
-    pygame.draw.line(screen, RED, (0, 300), (SCREEN_WIDTH, 300))
+    screen.blit(view_img, (0, 0))
+    screen.blit(tree1_img, (0, SCREEN_HEIGHT - tree1_img.get_height() - 100))
+    screen.blit(tree2_img, (0, SCREEN_HEIGHT - tree2_img.get_height() - 85))
+    screen.blit(swamp_img, (0, SCREEN_HEIGHT - swamp_img.get_height() - 50))
+    screen.blit(grass_img, (0, SCREEN_HEIGHT - grass_img.get_height() - 40))
 
 
 class Character(pygame.sprite.Sprite):
@@ -120,6 +135,8 @@ class Character(pygame.sprite.Sprite):
         self.image = self.animation_list[self.action][self.frame_index]
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
+        self.width = self.image.get_width()
+        self.height = self.image.get_height()
 
     def update(self):
         self.update_animation()
@@ -130,8 +147,10 @@ class Character(pygame.sprite.Sprite):
 
     def move(self, moving_left, moving_right):
         # reset movement variables
+        screen_scroll = 0
         dx = 0
         dy = 0
+
         # assign movement variables if moving left or right
         if moving_left:
             dx = -self.speed
@@ -150,14 +169,28 @@ class Character(pygame.sprite.Sprite):
         self.vel_y += GRAVITY
         dy += self.vel_y
 
-        # check collision with floor
-        if self.rect.bottom + dy > 300:
-            dy = 300 - self.rect.bottom
-            self.in_air = False
+        # check for collision
+        for tile in world.obstacle_list:
+            # check collision in the x direction
+            if tile[1].colliderect(self.rect.x + dx, self.rect.y, self.width, self.height):
+                dx = 0
+            # check collision in the y direction
+            if tile[1].colliderect(self.rect.x, self.rect.y + dy, self.width, self.height):
+                # check if below the ground,i.e. jumping
+                if self.vel_y < 0:
+                    self.vel_y = 0
+                    dy = tile[1].bottom - self.rect.top
+                # check if above the ground, i.e. falling
+                elif self.vel_y >= 0:
+                    self.vel_y = 0
+                    self.in_air = False
+                    dy = tile[1].top - self.rect.bottom
 
         # update rectangle position
         self.rect.x += dx
         self.rect.y += dy
+
+        # update scroll based on player position
 
     def shoot(self):
         if self.shoot_cooldown == 0 and self.ammo > 0:
@@ -369,6 +402,10 @@ class ShootingSubject(pygame.sprite.Sprite):
         # check if stone has gone off screen
         if self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
             self.kill()
+        # check for collision with level
+        for tile in world.obstacle_list:
+            if tile[1].colliderect(self.rect):
+                self.kill()
 
         # check collision with characters
         if pygame.sprite.spritecollide(shrek, arrow_group, False):
