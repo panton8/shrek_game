@@ -2,6 +2,8 @@ import pygame
 import os
 import random
 import csv
+import button
+from button import *
 
 pygame.init()
 
@@ -25,6 +27,7 @@ TILE_TYPES = 28
 screen_scroll = 0
 bg_scroll = 0
 level = 1
+start_game = False
 
 # define player action variables
 moving_left = False
@@ -38,15 +41,17 @@ for x in range(TILE_TYPES):
     img = pygame.transform.scale(img, (TILE_SIZE, TILE_SIZE))
     img_list.append(img)
 
-# load images for background
+# load images
+# background
 view_img = pygame.image.load('images/BackGround/View.png').convert_alpha()
 tree1_img = pygame.image.load('images/BackGround/Tree1.png').convert_alpha()
 tree2_img = pygame.image.load('images/BackGround/Tree2.png').convert_alpha()
 swamp_img = pygame.image.load('images/BackGround/Swamp.png').convert_alpha()
 grass_img = pygame.image.load('images/BackGround/Grass.png').convert_alpha()
-
-
-# load images
+# button images
+start_btn_img = pygame.image.load('images/Buttons/start_btn.png').convert_alpha()
+exit_btn_img = pygame.image.load('images/Buttons/exit_btn.png').convert_alpha()
+# shooting objects
 stone_img = pygame.image.load('images/Icons/stone.png').convert_alpha()
 arrow_img = pygame.image.load('images/Icons/arrow.png').convert_alpha()
 
@@ -79,11 +84,13 @@ def draw_text(text, font, text_col, x, y):
 
 def draw_bg():
     screen.fill(BG)
-    screen.blit(view_img, (0, 0))
-    screen.blit(tree1_img, (0, SCREEN_HEIGHT - tree1_img.get_height() - 100))
-    screen.blit(tree2_img, (0, SCREEN_HEIGHT - tree2_img.get_height() - 85))
-    screen.blit(swamp_img, (0, SCREEN_HEIGHT - swamp_img.get_height() - 50))
-    screen.blit(grass_img, (0, SCREEN_HEIGHT - grass_img.get_height() - 40))
+    width = view_img.get_width()
+    for x in range(4):
+        screen.blit(view_img, ((x * width) - bg_scroll * 0.5, 0))
+        screen.blit(tree1_img, ((x * width) - bg_scroll * 0.5, 0))
+        screen.blit(tree2_img, ((x * width) - bg_scroll * 0.6, 0))
+        screen.blit(swamp_img, ((x * width) - bg_scroll * 0.6, SCREEN_HEIGHT - swamp_img.get_height() - 50))
+        screen.blit(grass_img, ((x * width) - bg_scroll * 0.65, SCREEN_HEIGHT - grass_img.get_height() - 40))
 
 
 class Character(pygame.sprite.Sprite):
@@ -160,11 +167,13 @@ class Character(pygame.sprite.Sprite):
             dx = self.speed
             self.flip = False
             self.direction = 1
+
         # jump
         if self.jump is True and self.in_air is False:
             self.vel_y = -11
             self.jump = False
             self.in_air = True
+
         # apply gravity
         self.vel_y += GRAVITY
         dy += self.vel_y
@@ -174,6 +183,11 @@ class Character(pygame.sprite.Sprite):
             # check collision in the x direction
             if tile[1].colliderect(self.rect.x + dx, self.rect.y, self.width, self.height):
                 dx = 0
+                # if the AI hit a wall then make it turn around
+                if self.char_type == 'Enemy':
+                    self.direction *= -1
+                    self.move_counter = 0
+
             # check collision in the y direction
             if tile[1].colliderect(self.rect.x, self.rect.y + dy, self.width, self.height):
                 # check if below the ground,i.e. jumping
@@ -186,11 +200,21 @@ class Character(pygame.sprite.Sprite):
                     self.in_air = False
                     dy = tile[1].top - self.rect.bottom
 
+        # check if going off the edges of the screen
+        if self.char_type == "Player":
+            if self.rect.left + dx < 0 or self.rect.right + dx > SCREEN_WIDTH:
+                dx = 0
+
         # update rectangle position
         self.rect.x += dx
         self.rect.y += dy
-
         # update scroll based on player position
+        if self.char_type == 'Player':
+            if (self.rect.right > SCREEN_WIDTH - SCROLL_THRESH and bg_scroll < (world.level_length * TILE_SIZE) - swamp_img.get_width()) or (self.rect.left < SCROLL_THRESH and bg_scroll > abs(dx)):
+                self.rect.x -= dx
+                screen_scroll = -dx
+
+        return screen_scroll
 
     def shoot(self):
         if self.shoot_cooldown == 0 and self.ammo > 0:
@@ -237,13 +261,18 @@ class Character(pygame.sprite.Sprite):
                     if self.idling_counter <= 0:
                         self.idling = False
         elif not self.alive:
+            self.vel_y = 0
             self.update_action(4)   # 4: death
         else:
             self.update_action(0)  # 0: idle
 
+
+        #scroll
+        self.rect.x += screen_scroll
+
     def update_animation(self):
         # update animation
-        ANIMATION_COOLDOWN = 115
+        ANIMATION_COOLDOWN = 90
         # update image depending on current frame
         self.image = self.animation_list[self.action][self.frame_index]
         # check if enough time has passed since the last update
@@ -281,6 +310,7 @@ class World:
         self.obstacle_list = []
 
     def process_data(self, data):
+        self.level_length = len(data[0])
         # iterate through each value in level data file
         for y, row in enumerate(data):
             for x, tile in enumerate(row):
@@ -321,6 +351,7 @@ class World:
 
     def draw(self):
         for tile in self.obstacle_list:
+            tile[1][0] += screen_scroll
             screen.blit(tile[0], tile[1])
 
 
@@ -331,6 +362,9 @@ class Decoration(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
 
+    def update(self):
+        self.rect.x += screen_scroll
+
 
 class Spikes(pygame.sprite.Sprite):
     def __init__(self, img, x, y):
@@ -339,6 +373,9 @@ class Spikes(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
 
+    def update(self):
+        self.rect.x += screen_scroll
+
 
 class Exit(pygame.sprite.Sprite):
     def __init__(self, img, x, y):
@@ -346,6 +383,9 @@ class Exit(pygame.sprite.Sprite):
         self.image = img
         self.rect = self.image.get_rect()
         self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
+
+    def update(self):
+        self.rect.x += screen_scroll
 
 
 class ItemBox(pygame.sprite.Sprite):
@@ -357,6 +397,8 @@ class ItemBox(pygame.sprite.Sprite):
         self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
 
     def update(self):
+        #scroll
+        self.rect.x += screen_scroll
         # check if the player has picked up the box
         if pygame.sprite.collide_rect(self, shrek):
             # check what kind of box it was
@@ -398,7 +440,7 @@ class ShootingSubject(pygame.sprite.Sprite):
 
     def update(self):
         # move stone
-        self.rect.x += self.direction * self.speed
+        self.rect.x += (self.direction * self.speed) + screen_scroll
         # check if stone has gone off screen
         if self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
             self.kill()
@@ -418,6 +460,10 @@ class ShootingSubject(pygame.sprite.Sprite):
                     enemy.health -= 50
                     self.kill()
 
+
+# create buttons
+start_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 - 150, start_btn_img, 1)
+exit_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 + 50, exit_btn_img, 1)
 
 # create sprite groups
 enemy_group = pygame.sprite.Group()
@@ -449,58 +495,70 @@ run = True
 while run:
     clock.tick(FPS)
 
-    # update background
-    draw_bg()
+    if start_game is False:
+        screen.fill(BG)
+        # add buttons
+        if start_button.draw(screen):
+            start_game = True
+        if exit_button.draw(screen):
+            run = False
+    else:
+        # update background
+        draw_bg()
 
-    # draw world map
-    world.draw()
+        # draw world map
+        world.draw()
 
-    # show player health
-    health_bar.draw(shrek.health)
+        # show player health
+        health_bar.draw(shrek.health)
 
-    # show ammo
-    screen.blit(stone_img, (5, 37.5))
-    draw_text(f': {shrek.ammo}', font, WHITE, 25, 40)
-    screen.blit(coin_box_img, (3, 67.5))
-    draw_text(f': {shrek.coins}', font, WHITE, 25, 65)
+        # show ammo
+        screen.blit(stone_img, (5, 37.5))
+        draw_text(f': {shrek.ammo}', font, WHITE, 25, 40)
+        screen.blit(coin_box_img, (3, 67.5))
+        draw_text(f': {shrek.coins}', font, WHITE, 25, 65)
 
-    shrek.update()
-    shrek.draw()
+        shrek.update()
+        shrek.draw()
 
-    for enemy in enemy_group:
-        enemy.ai()
-        enemy.update()
-        enemy.draw()
+        for enemy in enemy_group:
+            enemy.ai()
+            enemy.update()
+            enemy.draw()
 
-    # update and draw groups
-    stone_group.update()
-    arrow_group.update()
-    stone_group.draw(screen)
-    arrow_group.draw(screen)
+        # update and draw groups
+        stone_group.update()
+        arrow_group.update()
+        stone_group.draw(screen)
+        arrow_group.draw(screen)
 
-    decoration_group.update()
-    exit_group.update()
-    spikes_group.update()
-    exit_group.draw(screen)
-    decoration_group.draw(screen)
-    spikes_group.draw(screen)
+        decoration_group.update()
+        exit_group.update()
+        spikes_group.update()
+        exit_group.draw(screen)
+        decoration_group.draw(screen)
+        spikes_group.draw(screen)
 
-    item_box_group.update()
-    item_box_group.draw(screen)
+        item_box_group.update()
+        item_box_group.draw(screen)
 
-    # update player action
-    if shrek.alive:
-        # shoot stones
-        if shoot:
-            shrek.shoot()
-            shrek.update_action(3)  # 3: shoot
-        elif shrek.in_air:
-            shrek.update_action(2)  # 2: jump
-        elif moving_left or moving_right:
-            shrek.update_action(1)  # 1: run
-        else:
-            shrek.update_action(0)  # 0: idle
-        shrek.move(moving_left, moving_right)
+        # update player action
+        if shrek.alive:
+            # shoot stones
+            if shoot:
+                shrek.shoot()
+                shrek.update_action(3)  # 3: shoot
+            elif shrek.in_air:
+                shrek.update_action(2)  # 2: jump
+            elif moving_left or moving_right:
+                shrek.update_action(1)  # 1: run
+            else:
+                shrek.update_action(0)  # 0: idle
+            screen_scroll = shrek.move(moving_left, moving_right)
+            bg_scroll -= screen_scroll
+            # check if player has completed the level
+
+
 
     for event in pygame.event.get():
         # quit game
