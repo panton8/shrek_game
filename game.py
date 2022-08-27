@@ -51,6 +51,7 @@ grass_img = pygame.image.load('images/BackGround/Grass.png').convert_alpha()
 # button images
 start_btn_img = pygame.image.load('images/Buttons/start_btn.png').convert_alpha()
 exit_btn_img = pygame.image.load('images/Buttons/exit_btn.png').convert_alpha()
+reset_btn_img = pygame.image.load('images/Buttons/reset_btn.png').convert_alpha()
 # shooting objects
 stone_img = pygame.image.load('images/Icons/stone.png').convert_alpha()
 arrow_img = pygame.image.load('images/Icons/arrow.png').convert_alpha()
@@ -91,6 +92,25 @@ def draw_bg():
         screen.blit(tree2_img, ((x * width) - bg_scroll * 0.6, 0))
         screen.blit(swamp_img, ((x * width) - bg_scroll * 0.6, SCREEN_HEIGHT - swamp_img.get_height() - 50))
         screen.blit(grass_img, ((x * width) - bg_scroll * 0.65, SCREEN_HEIGHT - grass_img.get_height() - 40))
+
+
+# function to reset level
+def reset_level():
+    enemy_group.empty()
+    spikes_group.empty()
+    decoration_group.empty()
+    exit_group.empty()
+    arrow_group.empty()
+    stone_group.empty()
+    item_box_group.empty()
+
+    # create empty tile list
+    data = []
+    for row in range(ROWS):
+        r = [-1] * COLS
+        data.append(r)
+
+    return data
 
 
 class Character(pygame.sprite.Sprite):
@@ -200,6 +220,10 @@ class Character(pygame.sprite.Sprite):
                     self.in_air = False
                     dy = tile[1].top - self.rect.bottom
 
+        # check with collision with spikes
+        if pygame.sprite.spritecollide(self, spikes_group, False):
+            self.health = 0
+
         # check if going off the edges of the screen
         if self.char_type == "Player":
             if self.rect.left + dx < 0 or self.rect.right + dx > SCREEN_WIDTH:
@@ -261,7 +285,6 @@ class Character(pygame.sprite.Sprite):
                     if self.idling_counter <= 0:
                         self.idling = False
         elif not self.alive:
-            self.vel_y = 0
             self.update_action(4)   # 4: death
         else:
             self.update_action(0)  # 0: idle
@@ -462,7 +485,8 @@ class ShootingSubject(pygame.sprite.Sprite):
 
 
 # create buttons
-start_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 - 150, start_btn_img, 1)
+start_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 - 250, start_btn_img, 1)
+reset_button = button.Button(SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT // 2 - 100, reset_btn_img, 0.5)
 exit_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 + 50, exit_btn_img, 1)
 
 # create sprite groups
@@ -556,6 +580,19 @@ while run:
                 shrek.update_action(0)  # 0: idle
             screen_scroll = shrek.move(moving_left, moving_right)
             bg_scroll -= screen_scroll
+        else:
+            screen_scroll = 0
+            if reset_button.draw(screen):
+                bg_scroll = 0
+                world_data = reset_level()
+                with open(f'level{level - 1}_data.csv', newline='') as csvfile:
+                    reader = csv.reader(csvfile, delimiter=',')
+                    for x, row in enumerate(reader):
+                        for y, tile in enumerate(row):
+                            world_data[x][y] = int(tile)
+                world = World()
+                shrek, health_bar = world.process_data(world_data)
+
             # check if player has completed the level
 
 
