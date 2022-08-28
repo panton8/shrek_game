@@ -1,10 +1,12 @@
 import pygame
+from pygame import mixer
 import os
 import random
 import csv
 import button
 from button import *
 
+mixer.init()
 pygame.init()
 
 SCREEN_WIDTH = 800
@@ -24,15 +26,28 @@ ROWS = 16
 COLS = 150
 TILE_SIZE = SCREEN_HEIGHT // ROWS
 TILE_TYPES = 28
+MAX_LEVEL = 3
 screen_scroll = 0
 bg_scroll = 0
-level = 1
+level = 0
 start_game = False
+start_intro = False
 
 # define player action variables
 moving_left = False
 moving_right = False
 shoot = False
+
+# load music
+pygame.mixer.music.load('music/main menu.mp3')
+pygame.mixer.music.set_volume(0.1)
+pygame.mixer.music.play(-1, 0.0, 5000)
+jump_fx = pygame.mixer.Sound('music/jump.wav')
+jump_fx.set_volume(0.5)
+shoot_stone_fx = pygame.mixer.Sound('music/stone_sh.wav')
+shoot_stone_fx.set_volume(0.5)
+shoot_arrow_fx = pygame.mixer.Sound('music/arrow_sh.wav')
+shoot_arrow_fx.set_volume(0.5)
 
 # store tiles in a list
 img_list = []
@@ -73,6 +88,7 @@ RED = (255, 0, 0)
 WHITE = (255, 255, 255)
 GREEN = (0, 255, 0)
 BLACK = (0, 0, 0)
+PINK = (235, 65, 54)
 
 # define font
 font = pygame.font.SysFont('Futura', 30)
@@ -224,6 +240,11 @@ class Character(pygame.sprite.Sprite):
         if pygame.sprite.spritecollide(self, spikes_group, False):
             self.health = 0
 
+        # check for collision with exit
+        level_complete = False
+        if pygame.sprite.spritecollide(self, exit_group, False):
+            level_complete = True
+
         # check if going off the edges of the screen
         if self.char_type == "Player":
             if self.rect.left + dx < 0 or self.rect.right + dx > SCREEN_WIDTH:
@@ -238,7 +259,7 @@ class Character(pygame.sprite.Sprite):
                 self.rect.x -= dx
                 screen_scroll = -dx
 
-        return screen_scroll
+        return screen_scroll, level_complete
 
     def shoot(self):
         if self.shoot_cooldown == 0 and self.ammo > 0:
@@ -246,9 +267,11 @@ class Character(pygame.sprite.Sprite):
             if self.char_type == 'Player':
                 stone_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
                 stone_group.add(stone_object)
+                shoot_stone_fx.play()
             else:
                 arrow_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
                 arrow_group.add(arrow_object)
+                shoot_arrow_fx.play()
             # reduce ammo
             self.ammo -= 1
 
@@ -484,10 +507,38 @@ class ShootingSubject(pygame.sprite.Sprite):
                     self.kill()
 
 
+class ScreenFade:
+    def __init__(self, direction, colour, speed):
+        self.direction = direction
+        self.colour = colour
+        self.speed = speed
+        self.fade_counter = 0
+
+    def fade(self):
+        fade_complete = False
+        self.fade_counter += self.speed
+        if self.direction == 1:     # whole screen fade
+            pygame.draw.rect(screen, self.colour, (0 - self.fade_counter, 0, SCREEN_WIDTH // 2, SCREEN_HEIGHT))
+            pygame.draw.rect(screen, self.colour, (SCREEN_WIDTH // 2 + self.fade_counter, 0, SCREEN_WIDTH, SCREEN_HEIGHT))
+            pygame.draw.rect(screen, self.colour, (0, 0 - self.fade_counter, SCREEN_WIDTH, SCREEN_HEIGHT // 2))
+            pygame.draw.rect(screen, self.colour, (0, SCREEN_HEIGHT // 2 + self.fade_counter, SCREEN_WIDTH, SCREEN_HEIGHT))
+
+        if self.direction == 2:     # vertical screen fade down
+            pygame.draw.rect(screen, self.colour, (0, 0, SCREEN_WIDTH, 0 + self.fade_counter))
+        if self.fade_counter >= SCREEN_WIDTH:
+            fade_complete = True
+
+        return fade_complete
+
+
+# create screen fades
+intro_fade = ScreenFade(1, BLACK, 4)
+death_fade = ScreenFade(2, PINK, 4)
+
 # create buttons
-start_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 - 250, start_btn_img, 1)
-reset_button = button.Button(SCREEN_WIDTH // 2 - 120, SCREEN_HEIGHT // 2 - 100, reset_btn_img, 0.5)
-exit_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 + 50, exit_btn_img, 1)
+start_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 - 200, start_btn_img, 1)
+reset_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2 - 200, reset_btn_img, 0.65)
+exit_button = button.Button(SCREEN_WIDTH // 2 - 160, SCREEN_HEIGHT // 2, exit_btn_img, 1)
 
 # create sprite groups
 enemy_group = pygame.sprite.Group()
@@ -505,7 +556,7 @@ for row in range(ROWS):
     world_data.append(r)
 
 # load in level data and create world
-with open(f'level{level - 1}_data.csv', newline='') as csvfile:
+with open(f'level{level}_data.csv', newline='') as csvfile:
     reader = csv.reader(csvfile, delimiter=',')
     for x, row in enumerate(reader):
         for y, tile in enumerate(row):
@@ -524,6 +575,7 @@ while run:
         # add buttons
         if start_button.draw(screen):
             start_game = True
+            start_intro = True
         if exit_button.draw(screen):
             run = False
     else:
@@ -566,6 +618,12 @@ while run:
         item_box_group.update()
         item_box_group.draw(screen)
 
+        #show intro
+        if start_intro is True:
+            if intro_fade.fade():
+                start_intro = False
+                intro_fade.fade_counter = 0
+
         # update player action
         if shrek.alive:
             # shoot stones
@@ -578,24 +636,41 @@ while run:
                 shrek.update_action(1)  # 1: run
             else:
                 shrek.update_action(0)  # 0: idle
-            screen_scroll = shrek.move(moving_left, moving_right)
+            screen_scroll, level_complete = shrek.move(moving_left, moving_right)
             bg_scroll -= screen_scroll
-        else:
-            screen_scroll = 0
-            if reset_button.draw(screen):
+            # check if player has completed the level
+            if level_complete:
+                start_intro = True
+                level += 1
                 bg_scroll = 0
                 world_data = reset_level()
-                with open(f'level{level - 1}_data.csv', newline='') as csvfile:
-                    reader = csv.reader(csvfile, delimiter=',')
-                    for x, row in enumerate(reader):
-                        for y, tile in enumerate(row):
-                            world_data[x][y] = int(tile)
-                world = World()
-                shrek, health_bar = world.process_data(world_data)
-
-            # check if player has completed the level
-
-
+                if level <= MAX_LEVEL:
+                    # load in level data and create the world
+                    with open(f'level{level}_data.csv', newline='') as csvfile:
+                        reader = csv.reader(csvfile, delimiter=',')
+                        for x, row in enumerate(reader):
+                            for y, tile in enumerate(row):
+                                world_data[x][y] = int(tile)
+                    world = World()
+                    shrek, health_bar = world.process_data(world_data)
+        else:
+            screen_scroll = 0
+            if death_fade.fade():
+                if reset_button.draw(screen):
+                    death_fade.fade_counter = 0
+                    start_intro = True
+                    bg_scroll = 0
+                    world_data = reset_level()
+                    # load in level data and create the world
+                    with open(f'level{level}_data.csv', newline='') as csvfile:
+                        reader = csv.reader(csvfile, delimiter=',')
+                        for x, row in enumerate(reader):
+                            for y, tile in enumerate(row):
+                                world_data[x][y] = int(tile)
+                    world = World()
+                    shrek, health_bar = world.process_data(world_data)
+                if exit_button.draw(screen):
+                    run = False
 
     for event in pygame.event.get():
         # quit game
@@ -611,6 +686,7 @@ while run:
                 shoot = True
             if event.key == pygame.K_w and shrek.alive:
                 shrek.jump = True
+                jump_fx.play()
             if event.key == pygame.K_ESCAPE:
                 run = False
 
