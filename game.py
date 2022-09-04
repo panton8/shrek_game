@@ -205,8 +205,8 @@ class Character(pygame.sprite.Sprite):
             self.direction = 1
 
         # jump
-        if self.jump is True and self.in_air is False:
-            self.vel_y = -11
+        if self.jump is True and self.in_air is False and self.char_type == 'Player':
+            self.vel_y = -10
             self.jump = False
             self.in_air = True
 
@@ -255,7 +255,8 @@ class Character(pygame.sprite.Sprite):
         self.rect.y += dy
         # update scroll based on player position
         if self.char_type == 'Player':
-            if (self.rect.right > SCREEN_WIDTH - SCROLL_THRESH and bg_scroll < (world.level_length * TILE_SIZE) - swamp_img.get_width()) or (self.rect.left < SCROLL_THRESH and bg_scroll > abs(dx)):
+            if (self.rect.right > SCREEN_WIDTH - SCROLL_THRESH and
+                    bg_scroll < (world.level_length * TILE_SIZE) - SCREEN_WIDTH):
                 self.rect.x -= dx
                 screen_scroll = -dx
 
@@ -265,11 +266,13 @@ class Character(pygame.sprite.Sprite):
         if self.shoot_cooldown == 0 and self.ammo > 0:
             self.shoot_cooldown = 50
             if self.char_type == 'Player':
-                stone_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
+                stone_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction),
+                                               self.rect.centery, self.direction, self.weapon_image)
                 stone_group.add(stone_object)
                 shoot_stone_fx.play()
             else:
-                arrow_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction), self.rect.centery, self.direction, self.weapon_image)
+                arrow_object = ShootingSubject(self.rect.centerx + (0.75 * self.rect.size[0] * self.direction),
+                                               self.rect.centery, self.direction, self.weapon_image)
                 arrow_group.add(arrow_object)
                 shoot_arrow_fx.play()
             # reduce ammo
@@ -309,11 +312,12 @@ class Character(pygame.sprite.Sprite):
                         self.idling = False
         elif not self.alive:
             self.update_action(4)   # 4: death
+            #   self.kill()
+
         else:
             self.update_action(0)  # 0: idle
 
-
-        #scroll
+        # scroll
         self.rect.x += screen_scroll
 
     def update_animation(self):
@@ -366,7 +370,7 @@ class World:
                     img_rect.x = x * TILE_SIZE
                     img_rect.y = y * TILE_SIZE
                     tile_data = (img, img_rect)
-                    if tile >= 0 and tile <= 16:
+                    if 0 <= tile <= 16:
                         self.obstacle_list.append(tile_data)
                     elif tile == 17:    # create ammo box
                         item_box = ItemBox('Ammo', x * TILE_SIZE, y * TILE_SIZE)
@@ -386,7 +390,7 @@ class World:
                     elif tile == 22:
                         spikes = Spikes(img, x * TILE_SIZE, y * TILE_SIZE)
                         spikes_group.add(spikes)
-                    elif tile >= 23 and tile <= 26:
+                    elif 23 <= tile <= 26:
                         decoration = Decoration(img, x * TILE_SIZE, y * TILE_SIZE)
                         decoration_group.add(decoration)
                     elif tile == 27:
@@ -443,7 +447,7 @@ class ItemBox(pygame.sprite.Sprite):
         self.rect.midtop = (x + TILE_SIZE // 2, y + (TILE_SIZE - self.image.get_height()))
 
     def update(self):
-        #scroll
+        # scroll
         self.rect.x += screen_scroll
         # check if the player has picked up the box
         if pygame.sprite.collide_rect(self, shrek):
@@ -452,10 +456,13 @@ class ItemBox(pygame.sprite.Sprite):
                 shrek.health += 25
                 if shrek.health > shrek.max_health:
                     shrek.health = shrek.max_health
+                self.kill()
             elif self.item_type == 'Coin':
                 shrek.coins += 1
+                self.kill()
             elif self.item_type == 'Ammo':
                 shrek.ammo += 5
+                self.kill()
 
 
 class HealthBar:
@@ -487,7 +494,7 @@ class ShootingSubject(pygame.sprite.Sprite):
     def update(self):
         # move stone
         self.rect.x += (self.direction * self.speed) + screen_scroll
-        # check if stone has gone off screen
+        # check if stone has gone off-screen
         if self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
             self.kill()
         # check for collision with level
@@ -618,7 +625,7 @@ while run:
         item_box_group.update()
         item_box_group.draw(screen)
 
-        #show intro
+        # show intro
         if start_intro is True:
             if intro_fade.fade():
                 start_intro = False
@@ -644,7 +651,21 @@ while run:
                 level += 1
                 bg_scroll = 0
                 world_data = reset_level()
-                if level <= MAX_LEVEL:
+                if level < MAX_LEVEL:
+                    # load in level data and create the world
+                    with open(f'level{level}_data.csv', newline='') as csvfile:
+                        reader = csv.reader(csvfile, delimiter=',')
+                        for x, row in enumerate(reader):
+                            for y, tile in enumerate(row):
+                                world_data[x][y] = int(tile)
+                    world = World()
+                    shrek, health_bar = world.process_data(world_data)
+                else:
+                    level = 0
+                    start_game = False
+                    start_intro = True
+                    bg_scroll = 0
+                    world_data = reset_level()
                     # load in level data and create the world
                     with open(f'level{level}_data.csv', newline='') as csvfile:
                         reader = csv.reader(csvfile, delimiter=',')

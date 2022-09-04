@@ -6,7 +6,6 @@ pygame.init()
 
 clock = pygame.time.Clock()
 FPS = 60
-
 # game window
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 640
@@ -190,9 +189,8 @@ while run:
                 level += 1
             if event.key == pygame.K_DOWN and level > 0:
                 level -= 1
-
-                if event.key == pygame.K_LEFT:
-                    scroll_left = True
+            if event.key == pygame.K_LEFT:
+                scroll_left = True
             if event.key == pygame.K_RIGHT:
                 scroll_right = True
             if event.key == pygame.K_RSHIFT:
